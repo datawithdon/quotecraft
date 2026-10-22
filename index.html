@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Freight quote and landed-cost builder: compare air, LCL and FCL, apply Incoterms and margin, and export a PDF quote.">
+  <title>QuoteCraft</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="vendor/fuse.min.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><div class="brand-mark" aria-hidden="true">Q</div>QuoteCraft</div>
+      <nav class="tabs" role="tablist" aria-label="Sections">
+        <button class="tab" role="tab" data-view="quote" aria-selected="true">New quote</button>
+        <button class="tab" role="tab" data-view="history" aria-selected="false">History</button>
+        <button class="tab" role="tab" data-view="rates" aria-selected="false">Rates</button>
+        <button class="tab" role="tab" data-view="settings" aria-selected="false">Settings</button>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- ===================================================== QUOTE -->
+    <section id="view-quote" class="view">
+      <div class="grid-2">
+        <div class="stack">
+          <div class="card">
+            <div class="card-head">
+              <h2>Shipment <span id="editing-badge" class="badge accent hidden"></span></h2>
+              <button class="btn sm" id="btn-new">Start new quote</button>
+            </div>
+            <div class="fields">
+              <label class="field wide"><span>Customer</span><input id="f-customer" autocomplete="off" placeholder="Customer / company name"></label>
+              <label class="field"><span>Customer is the</span>
+                <select id="f-role"><option value="CONSIGNEE">Consignee (buyer)</option><option value="SHIPPER">Shipper (seller)</option></select></label>
+              <label class="field"><span>Incoterm 2020</span><select id="f-incoterm"></select></label>
+              <label class="field"><span>Origin</span><input id="f-origin" list="locations" autocomplete="off" placeholder="e.g. CNSHA"></label>
+              <label class="field"><span>Destination</span><input id="f-destination" list="locations" autocomplete="off" placeholder="e.g. DEHAM"></label>
+              <label class="field"><span>Goods value (<span class="cur">USD</span>)</span><input id="f-value" type="number" min="0" step="any"></label>
+              <label class="field"><span>Units (for per-unit cost)</span><input id="f-units" type="number" min="0" step="1" placeholder="optional"></label>
+              <label class="field wide"><span>Commodity</span><input id="f-commodity" autocomplete="off" placeholder="e.g. Cotton T-shirts"></label>
+            </div>
+            <datalist id="locations"></datalist>
+
+            <h3 class="sub-h">Pieces</h3>
+            <div class="table-wrap">
+              <table class="pieces">
+                <thead><tr><th>Qty</th><th>L cm</th><th>W cm</th><th>H cm</th><th>Kg / pc</th><th></th></tr></thead>
+                <tbody id="pieces-body"></tbody>
+              </table>
+            </div>
+            <div class="mt-8 row"><button class="btn sm" id="btn-add-piece">+ Add line</button></div>
+            <div class="mt-12 stats" id="cargo-stats"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2>Customs &amp; insurance</h2></div>
+            <div class="fields">
+              <div class="field wide hs-box">
+                <span>HS code lookup</span>
+                <input id="f-hs-search" autocomplete="off" placeholder="Search commodity, e.g. cotton t-shirts" aria-controls="hs-results">
+                <div id="hs-results" class="hs-results hidden" role="listbox"></div>
+              </div>
+              <label class="field"><span>HS code</span><input id="f-hs" class="mono" autocomplete="off" placeholder="6109.10"></label>
+              <label class="field"><span>Duty rate %</span><input id="f-duty" type="number" min="0" step="any"></label>
+              <label class="field"><span>VAT / GST %</span><input id="f-vat" type="number" min="0" step="any"></label>
+              <label class="field"><span>Customs valuation</span>
+                <select id="f-valuation"><option value="CIF">CIF (EU, UK, most)</option><option value="FOB">FOB (US, CA, AU)</option></select></label>
+              <label class="field wide check"><input id="f-insure" type="checkbox"> Add cargo insurance</label>
+            </div>
+            <p class="mt-8 mb-0 muted small" id="hs-desc"></p>
+            <p class="mt-6 mb-0 muted small">Duty rates depend on the destination country's tariff. Check
+              <a href="https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp" target="_blank" rel="noopener noreferrer">EU TARIC</a>,
+              <a href="https://hts.usitc.gov/" target="_blank" rel="noopener noreferrer">US HTS</a> or
+              <a href="https://www.trade-tariff.service.gov.uk/" target="_blank" rel="noopener noreferrer">UK Trade Tariff</a>.</p>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="card">
+            <div class="card-head">
+              <h2>Options</h2>
+              <span class="muted small" id="options-meta"></span>
+            </div>
+            <div id="options"></div>
+          </div>
+
+          <div class="card" id="builder-card">
+            <div class="card-head">
+              <h2>Quote</h2>
+              <div class="row">
+                <label class="row small" for="f-markup"><span class="muted">Markup %</span></label>
+                <input class="w-80" id="f-markup" type="number" step="any">
+                <select class="w-auto" id="f-show" aria-label="Charges shown to the customer">
+                  <option value="CUSTOMER">Customer's share only</option>
+                  <option value="ALL">All charges</option>
+                </select>
+              </div>
+            </div>
+            <div id="builder"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================== HISTORY -->
+    <section id="view-history" class="view hidden">
+      <div class="stack">
+        <div class="card">
+          <div class="card-head">
+            <h2>Quote history</h2>
+            <div class="row">
+              <input class="w-240" id="f-hist-filter" placeholder="Filter by customer, lane, number…">
+              <button class="btn sm" id="btn-hist-csv">Export CSV</button>
+              <button class="btn sm" id="btn-backup">Backup JSON</button>
+              <label class="btn sm">Restore<input id="f-restore" type="file" accept=".json,application/json" class="hidden"></label>
+            </div>
+          </div>
+          <div class="stats" id="hist-stats"></div>
+          <div class="mt-12 table-wrap"><div id="hist-table"></div></div>
+        </div>
+        <div class="split">
+          <div class="card"><h2 class="mb-8">Win rate by lane</h2><div class="table-wrap" id="hist-lanes"></div></div>
+          <div class="card"><h2 class="mb-8">Win rate by mode</h2><div class="table-wrap" id="hist-modes"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================== RATES -->
+    <section id="view-rates" class="view hidden">
+      <div class="stack">
+        <div class="card">
+          <div class="card-head">
+            <h2>Rate sheet</h2>
+            <div class="row">
+              <label class="btn sm primary">Upload CSV / Excel<input id="f-rates-file" type="file" accept=".csv,.xlsx,.xls,text/csv" class="hidden"></label>
+              <button class="btn sm" id="btn-template">Download template</button>
+              <button class="btn sm" id="btn-rates-export">Download current</button>
+              <button class="btn sm" id="btn-rates-sample">Reset to sample</button>
+            </div>
+          </div>
+          <div class="stats" id="rate-stats"></div>
+          <div id="rate-messages" class="mt-12 gap-8 stack"></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h2>Rows</h2>
+            <input class="w-260" id="f-rate-filter" placeholder="Filter rows (lane, carrier, code…)">
+          </div>
+          <div class="table-wrap" id="rate-table"></div>
+        </div>
+        <div class="card">
+          <h2 class="mb-8">Rate sheet format</h2>
+          <p class="mt-0 muted">One row per charge. Use <code>*</code> in origin, destination or carrier to apply a charge to all of them; a more specific row overrides a wildcard row with the same <code>charge_code</code>. Every option needs a <code>FRT</code> row with a specific carrier.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Column</th><th>Values</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">mode</td><td>AIR, LCL, FCL</td></tr>
+                <tr><td class="mono">category</td><td>ORIGIN, FREIGHT, DEST, IMPORT_CLEARANCE, DELIVERY</td></tr>
+                <tr><td class="mono">basis</td><td>KG (chargeable kg for air, gross kg for sea) · WM (LCL revenue ton) · CBM · CONTAINER (FCL, per box) · SHIPMENT (flat) · PCT_FRT (% of the FRT line)</td></tr>
+                <tr><td class="mono">container</td><td>FCL only: 20GP, 40GP, 40HC, or blank for all container types</td></tr>
+                <tr><td class="mono">break_min</td><td>Weight/quantity break. The highest break not exceeding the shipment quantity applies (e.g. air +45 / +100 / +300 kg)</td></tr>
+                <tr><td class="mono">min_charge</td><td>Minimum amount for the line</td></tr>
+                <tr><td class="mono">currency</td><td>3-letter code; converted with the FX table in Settings</td></tr>
+                <tr><td class="mono">valid_from / valid_to</td><td>YYYY-MM-DD, optional. Expired rows are ignored; rows expiring within 14 days are flagged</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================== SETTINGS -->
+    <section id="view-settings" class="view hidden">
+      <div class="split">
+        <div class="card">
+          <h2 class="mb-12">Company (shown on quotes)</h2>
+          <div class="fields">
+            <label class="field wide"><span>Company name</span><input id="s-company"></label>
+            <label class="field wide"><span>Address</span><textarea id="s-address" rows="3"></textarea></label>
+            <label class="field"><span>Phone</span><input id="s-phone"></label>
+            <label class="field"><span>Email</span><input id="s-email" type="email"></label>
+            <label class="field wide"><span>Website</span><input id="s-website"></label>
+            <div class="field wide"><span>Logo (PNG/JPG/SVG, under 300 KB)</span>
+              <div class="row"><input class="mw-260" id="s-logo" type="file" accept="image/png,image/jpeg,image/svg+xml"><button class="btn sm" id="btn-logo-clear">Remove</button></div>
+              <img id="logo-preview" class="logo-preview hidden" alt="Logo preview">
+            </div>
+            <label class="field wide"><span>Quote terms &amp; conditions</span><textarea id="s-terms" rows="5"></textarea></label>
+          </div>
+        </div>
+        <div class="stack">
+          <div class="card">
+            <h2 class="mb-12">Pricing defaults</h2>
+            <div class="fields">
+              <label class="field"><span>Quote currency</span><input id="s-currency" maxlength="3" class="mono"></label>
+              <label class="field"><span>Default markup %</span><input id="s-markup" type="number" step="any"></label>
+              <label class="field"><span>Insurance rate %</span><input id="s-ins-pct" type="number" step="any" min="0"></label>
+              <label class="field"><span>Insurance minimum</span><input id="s-ins-min" type="number" step="any" min="0"></label>
+              <label class="field"><span>Quote valid (days)</span><input id="s-validity" type="number" min="1" step="1"></label>
+              <label class="field"><span>Air volumetric divisor</span>
+                <select id="s-divisor"><option value="6000">6000 (IATA standard)</option><option value="5000">5000 (express / courier)</option></select></label>
+              <label class="field wide"><span>FX rates: units per 1 USD (e.g. EUR=0.86, GBP=0.75)</span><textarea id="s-fx" rows="3" class="mono"></textarea></label>
+            </div>
+            <p class="muted small">The FX rates included are rough placeholders. Update them before quoting.</p>
+            <div class="row"><button class="btn primary" id="btn-save-settings">Save settings</button></div>
+          </div>
+          <div class="card">
+            <h2 class="mb-8">Your data</h2>
+            <p class="mt-0 muted">Everything is stored only in this browser (localStorage). Nothing is sent to any server. Use History → Backup JSON to move data between browsers.</p>
+            <button class="btn danger" id="btn-wipe">Erase all QuoteCraft data</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>QuoteCraft builds estimates only. Confirm rates, HS classification and duty with your carriers and customs broker before committing. All data stays in your browser.</footer>
+  <div id="print-area" aria-hidden="true"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+</body>
+</html>
