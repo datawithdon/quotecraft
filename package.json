@@ -1,0 +1,12 @@
+{
+  "name": "quotecraft",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Freight quote and landed-cost builder for freight forwarders. Static web app, no backend.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "start": "python3 -m http.server 8000"
+  },
+  "license": "MIT"
+}
