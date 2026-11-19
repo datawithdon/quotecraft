@@ -8,6 +8,13 @@ import { $, $$, h, mount, money, num, pct, toast, download, debounce } from "./d
 import * as store from "./store.js";
 import { searchHs } from "./hs.js";
 
+// Refuse to run inside a frame (clickjacking): GitHub Pages can't send
+// X-Frame-Options or a frame-ancestors header.
+if (window.top !== window.self) {
+  document.documentElement.replaceChildren();
+  throw new Error("QuoteCraft will not run inside a frame.");
+}
+
 // ------------------------------------------------------------------ state
 
 const LOCATION_NAMES = {
